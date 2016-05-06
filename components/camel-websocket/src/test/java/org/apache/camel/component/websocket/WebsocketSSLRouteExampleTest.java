@@ -33,7 +33,6 @@ import com.ning.http.client.ws.WebSocketUpgradeHandler;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.test.AvailablePortFinder;
 import org.apache.camel.test.junit4.CamelTestSupport;
-import org.apache.camel.util.jsse.ClientAuthentication;
 import org.apache.camel.util.jsse.KeyManagersParameters;
 import org.apache.camel.util.jsse.KeyStoreParameters;
 import org.apache.camel.util.jsse.SSLContextParameters;
@@ -75,7 +74,7 @@ public class WebsocketSSLRouteExampleTest extends CamelTestSupport {
         AsyncHttpClientConfig.Builder builder =
                 new AsyncHttpClientConfig.Builder();
 
-        builder.setSSLContext(new SSLContextParameters().createSSLContext());
+        builder.setSSLContext(new SSLContextParameters().createSSLContext(context));
         builder.setAcceptAnyCertificate(true);
         config = builder.build();
         c = new AsyncHttpClient(config);
@@ -162,6 +161,8 @@ public class WebsocketSSLRouteExampleTest extends CamelTestSupport {
                 WebsocketComponent websocketComponent = (WebsocketComponent) context.getComponent("websocket");
                 websocketComponent.setSslContextParameters(defineSSLContextParameters());
                 websocketComponent.setPort(port);
+                websocketComponent.setMinThreads(1);
+                websocketComponent.setMaxThreads(20);
 
                 from("websocket://test")
                         .log(">>> Message received from WebSocket Client : ${body}")

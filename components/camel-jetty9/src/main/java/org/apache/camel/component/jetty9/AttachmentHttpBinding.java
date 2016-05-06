@@ -30,6 +30,11 @@ import org.apache.camel.http.common.DefaultHttpBinding;
 import org.apache.camel.http.common.HttpMessage;
 import org.eclipse.jetty.util.MultiPartInputStreamParser;
 
+/**
+ * To handle attachments with Jetty 9.
+ * <p/>
+ * This implementation is needed to deal with attachments when using Jetty 9.
+ */
 final class AttachmentHttpBinding extends DefaultHttpBinding {
 
     AttachmentHttpBinding() {
@@ -44,11 +49,6 @@ final class AttachmentHttpBinding extends DefaultHttpBinding {
             try {
                 parts = parser.getParts();
                 for (Part part : parts) {
-                    String contentType = part.getContentType();
-                    if (!contentType.startsWith("application/octet-stream")) {
-                        continue;
-                    }
-
                     DataSource ds = new PartDataSource(part);
                     message.addAttachment(part.getName(), new DataHandler(ds));
                 }

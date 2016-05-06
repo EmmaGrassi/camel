@@ -58,12 +58,14 @@ public class RestBindingProcessor extends ServiceSupport implements AsyncProcess
     private final boolean skipBindingOnErrorCode;
     private final boolean enableCORS;
     private final Map<String, String> corsHeaders;
+    private final Map<String, String> queryDefaultValues;
 
     public RestBindingProcessor(CamelContext camelContext, DataFormat jsonDataFormat, DataFormat xmlDataFormat,
                                 DataFormat outJsonDataFormat, DataFormat outXmlDataFormat,
                                 String consumes, String produces, String bindingMode,
                                 boolean skipBindingOnErrorCode, boolean enableCORS,
-                                Map<String, String> corsHeaders) {
+                                Map<String, String> corsHeaders,
+                                Map<String, String> queryDefaultValues) {
 
         this.camelContext = camelContext;
 
@@ -99,6 +101,7 @@ public class RestBindingProcessor extends ServiceSupport implements AsyncProcess
         this.skipBindingOnErrorCode = skipBindingOnErrorCode;
         this.enableCORS = enableCORS;
         this.corsHeaders = corsHeaders;
+        this.queryDefaultValues = queryDefaultValues;
     }
 
     @Override
@@ -110,6 +113,14 @@ public class RestBindingProcessor extends ServiceSupport implements AsyncProcess
     public boolean process(Exchange exchange, final AsyncCallback callback) {
         if (enableCORS) {
             exchange.addOnCompletion(new RestBindingCORSOnCompletion(corsHeaders));
+        }
+
+        String method = exchange.getIn().getHeader(Exchange.HTTP_METHOD, String.class);
+        if ("OPTIONS".equalsIgnoreCase(method)) {
+            // for OPTIONS methods then we should not route at all as its part of CORS
+            exchange.setProperty(Exchange.ROUTE_STOP, true);
+            callback.done(true);
+            return true;
         }
 
         boolean isXml = false;
@@ -145,7 +156,7 @@ public class RestBindingProcessor extends ServiceSupport implements AsyncProcess
            // okay we have a binding mode, so need to check for empty body as that can cause the marshaller to fail
             // as they assume a non-empty body
             if (isXml || isJson) {
-                // we have binding enabled, so we need to know if there body is empty or not\
+                // we have binding enabled, so we need to know if there body is empty or not
                 // so force reading the body as a String which we can work with
                 body = MessageHelper.extractBodyAsString(exchange.getIn());
                 if (body != null) {
@@ -156,6 +167,15 @@ public class RestBindingProcessor extends ServiceSupport implements AsyncProcess
                         isXml = body.startsWith("<");
                         isJson = !isXml;
                     }
+                }
+            }
+        }
+
+        // add missing default values which are mapped as headers
+        if (queryDefaultValues != null) {
+            for (Map.Entry<String, String> entry : queryDefaultValues.entrySet()) {
+                if (exchange.getIn().getHeader(entry.getKey()) == null) {
+                    exchange.getIn().setHeader(entry.getKey(), entry.getValue());
                 }
             }
         }
@@ -182,7 +202,7 @@ public class RestBindingProcessor extends ServiceSupport implements AsyncProcess
         }
 
         // we could not bind
-        if (bindingMode == null || "off".equals(bindingMode) || bindingMode.equals("auto")) {
+        if ("off".equals(bindingMode) || bindingMode.equals("auto")) {
             // okay for auto we do not mind if we could not bind
             exchange.addOnCompletion(new RestBindingMarshalOnCompletion(exchange.getFromRouteId(), jsonMarshal, xmlMarshal, false, accept));
             callback.done(true);
@@ -331,12 +351,21 @@ public class RestBindingProcessor extends ServiceSupport implements AsyncProcess
                 return;
             }
 
+            String contentType = exchange.getIn().getHeader(Exchange.CONTENT_TYPE, String.class);
+            // need to lower-case so the contains check below can match if using upper case
+            contentType = contentType.toLowerCase(Locale.US);
             try {
                 // favor json over xml
                 if (isJson && jsonMarshal != null) {
-                    jsonMarshal.process(exchange);
+                    // only marshal if its json content type
+                    if (contentType.contains("json")) {
+                        jsonMarshal.process(exchange);
+                    }
                 } else if (isXml && xmlMarshal != null) {
-                    xmlMarshal.process(exchange);
+                    // only marshal if its xml content type
+                    if (contentType.contains("xml")) {
+                        xmlMarshal.process(exchange);
+                    }
                 } else {
                     // we could not bind
                     if (bindingMode.equals("auto")) {

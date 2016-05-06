@@ -23,6 +23,7 @@ import java.util.Map;
 import javax.net.ssl.SSLContext;
 
 import io.undertow.server.HttpServerExchange;
+import org.apache.camel.AsyncEndpoint;
 import org.apache.camel.Consumer;
 import org.apache.camel.Exchange;
 import org.apache.camel.Message;
@@ -32,6 +33,7 @@ import org.apache.camel.Producer;
 import org.apache.camel.impl.DefaultEndpoint;
 import org.apache.camel.spi.HeaderFilterStrategy;
 import org.apache.camel.spi.HeaderFilterStrategyAware;
+import org.apache.camel.spi.Metadata;
 import org.apache.camel.spi.UriEndpoint;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriPath;
@@ -43,24 +45,24 @@ import org.xnio.OptionMap;
 import org.xnio.Options;
 
 /**
- * Represents an Undertow endpoint.
+ * The undertow component provides HTTP-based endpoints for consuming and producing HTTP requests.
  */
 @UriEndpoint(scheme = "undertow", title = "Undertow", syntax = "undertow:httpURI",
-        consumerClass = UndertowConsumer.class, label = "http")
-public class UndertowEndpoint extends DefaultEndpoint implements HeaderFilterStrategyAware {
+        consumerClass = UndertowConsumer.class, label = "http", lenientProperties = true)
+public class UndertowEndpoint extends DefaultEndpoint implements AsyncEndpoint, HeaderFilterStrategyAware {
 
     private static final Logger LOG = LoggerFactory.getLogger(UndertowEndpoint.class);
     private UndertowComponent component;
     private SSLContext sslContext;
     private OptionMap optionMap;
 
-    @UriPath
+    @UriPath @Metadata(required = "true")
     private URI httpURI;
-    @UriParam
+    @UriParam(label = "advanced")
     private UndertowHttpBinding undertowHttpBinding;
-    @UriParam
+    @UriParam(label = "advanced")
     private HeaderFilterStrategy headerFilterStrategy;
-    @UriParam
+    @UriParam(label = "security")
     private SSLContextParameters sslContextParameters;
     @UriParam(label = "consumer")
     private String httpMethodRestrict;
@@ -70,14 +72,17 @@ public class UndertowEndpoint extends DefaultEndpoint implements HeaderFilterStr
     private Boolean throwExceptionOnFailure;
     @UriParam
     private Boolean transferException;
-    @UriPath(label = "producer", defaultValue = "true")
+    @UriParam(label = "producer", defaultValue = "true")
     private Boolean keepAlive = Boolean.TRUE;
-    @UriPath(label = "producer", defaultValue = "true")
+    @UriParam(label = "producer", defaultValue = "true")
     private Boolean tcpNoDelay = Boolean.TRUE;
-    @UriPath(label = "producer", defaultValue = "true")
+    @UriParam(label = "producer", defaultValue = "true")
     private Boolean reuseAddresses = Boolean.TRUE;
-    @UriParam(label = "producer")
+    @UriParam(label = "producer", prefix = "option.", multiValue = true)
     private Map<String, Object> options;
+    @UriParam(label = "consumer",
+            description = "Specifies whether to enable HTTP OPTIONS for this Servlet consumer. By default OPTIONS is turned off.")
+    private boolean optionsEnabled;
 
     public UndertowEndpoint(String uri, UndertowComponent component) throws URISyntaxException {
         super(uri, component);
@@ -268,12 +273,23 @@ public class UndertowEndpoint extends DefaultEndpoint implements HeaderFilterStr
         this.options = options;
     }
 
+    public boolean isOptionsEnabled() {
+        return optionsEnabled;
+    }
+
+    /**
+     * Specifies whether to enable HTTP OPTIONS for this Servlet consumer. By default OPTIONS is turned off.
+     */
+    public void setOptionsEnabled(boolean optionsEnabled) {
+        this.optionsEnabled = optionsEnabled;
+    }
+
     @Override
     protected void doStart() throws Exception {
         super.doStart();
 
         if (sslContextParameters != null) {
-            sslContext = sslContextParameters.createSSLContext();
+            sslContext = sslContextParameters.createSSLContext(getCamelContext());
         }
 
         // create options map

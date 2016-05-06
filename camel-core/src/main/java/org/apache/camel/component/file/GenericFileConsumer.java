@@ -22,13 +22,13 @@ import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
+import java.util.regex.Pattern;
 
 import org.apache.camel.AsyncCallback;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import org.apache.camel.ShutdownRunningTask;
 import org.apache.camel.impl.ScheduledBatchPollingConsumer;
-import org.apache.camel.spi.UriParam;
 import org.apache.camel.util.CastUtils;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.StopWatch;
@@ -48,14 +48,26 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
     protected volatile ShutdownRunningTask shutdownRunningTask;
     protected volatile int pendingExchanges;
     protected Processor customProcessor;
-    @UriParam
     protected boolean eagerLimitMaxMessagesPerPoll = true;
     protected volatile boolean prepareOnStartup;
+    private final Pattern includePattern;
+    private final Pattern excludePattern;
 
     public GenericFileConsumer(GenericFileEndpoint<T> endpoint, Processor processor, GenericFileOperations<T> operations) {
         super(endpoint, processor);
         this.endpoint = endpoint;
         this.operations = operations;
+
+        if (endpoint.getInclude() != null) {
+            this.includePattern = Pattern.compile(endpoint.getInclude(), Pattern.CASE_INSENSITIVE);
+        } else {
+            this.includePattern = null;
+        }
+        if (endpoint.getExclude() != null) {
+            this.excludePattern = Pattern.compile(endpoint.getExclude(), Pattern.CASE_INSENSITIVE);
+        } else {
+            this.excludePattern = null;
+        }
     }
 
     public Processor getCustomProcessor() {
@@ -592,19 +604,28 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
             }
         }
 
+        if (isDirectory && endpoint.getFilterDirectory() != null) {
+            // create a dummy exchange as Exchange is needed for expression evaluation
+            Exchange dummy = endpoint.createExchange(file);
+            boolean matches = endpoint.getFilterDirectory().matches(dummy);
+            if (!matches) {
+                return false;
+            }
+        }
+
         // directories are regarded as matched if filter accepted them
         if (isDirectory) {
             return true;
         }
 
-        if (ObjectHelper.isNotEmpty(endpoint.getExclude())) {
-            if (name.matches(endpoint.getExclude())) {
+        // exclude take precedence over include
+        if (excludePattern != null)  {
+            if (excludePattern.matcher(name).matches()) {
                 return false;
             }
         }
-
-        if (ObjectHelper.isNotEmpty(endpoint.getInclude())) {
-            if (!name.matches(endpoint.getInclude())) {
+        if (includePattern != null)  {
+            if (!includePattern.matcher(name).matches()) {
                 return false;
             }
         }
@@ -616,6 +637,15 @@ public abstract class GenericFileConsumer<T> extends ScheduledBatchPollingConsum
                 if (!name.equals(fileExpressionResult)) {
                     return false;
                 }
+            }
+        }
+
+        if (endpoint.getFilterFile() != null) {
+            // create a dummy exchange as Exchange is needed for expression evaluation
+            Exchange dummy = endpoint.createExchange(file);
+            boolean matches = endpoint.getFilterFile().matches(dummy);
+            if (!matches) {
+                return false;
             }
         }
 

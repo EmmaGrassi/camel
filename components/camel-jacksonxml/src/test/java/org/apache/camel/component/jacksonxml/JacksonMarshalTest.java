@@ -34,7 +34,7 @@ public class JacksonMarshalTest extends CamelTestSupport {
         MockEndpoint mock = getMockEndpoint("mock:reverse");
         mock.expectedMessageCount(1);
         mock.message(0).body().isInstanceOf(Map.class);
-        mock.message(0).body().equals(in);
+        mock.message(0).body().isEqualTo(in);
 
         Object marshalled = template.requestBody("direct:in", in);
         String marshalledAsString = context.getTypeConverter().convertTo(String.class, marshalled);
@@ -53,11 +53,11 @@ public class JacksonMarshalTest extends CamelTestSupport {
         MockEndpoint mock = getMockEndpoint("mock:reverse");
         mock.expectedMessageCount(1);
         mock.message(0).body().isInstanceOf(Map.class);
-        mock.message(0).body().equals(in);
+        mock.message(0).body().isEqualTo(in);
 
         Object marshalled = template.requestBody("direct:inPretty", in);
         String marshalledAsString = context.getTypeConverter().convertTo(String.class, marshalled);
-        String expected = "<HashMap>\n  <name>Camel</name>\n</HashMap>";
+        String expected = "<HashMap>\n  <name>Camel</name>\n</HashMap>\n";
         assertEquals(expected, marshalledAsString);
 
         template.sendBody("direct:backPretty", marshalled);
@@ -73,7 +73,7 @@ public class JacksonMarshalTest extends CamelTestSupport {
         MockEndpoint mock = getMockEndpoint("mock:reversePojo");
         mock.expectedMessageCount(1);
         mock.message(0).body().isInstanceOf(TestPojo.class);
-        mock.message(0).body().equals(in);
+        mock.message(0).body().isEqualTo(in);
 
         Object marshalled = template.requestBody("direct:inPojo", in);
         String marshalledAsString = context.getTypeConverter().convertTo(String.class, marshalled);

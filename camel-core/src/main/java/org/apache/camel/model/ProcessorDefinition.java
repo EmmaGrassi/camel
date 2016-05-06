@@ -200,7 +200,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
         }
 
         // validate that top-level is only added on the route (eg top level)
-        boolean parentIsRoute = this.getClass().isAssignableFrom(RouteDefinition.class);
+        boolean parentIsRoute = RouteDefinition.class.isAssignableFrom(this.getClass());
         if (output.isTopLevelOnly() && !parentIsRoute) {
             throw new IllegalArgumentException("The output must be added as top-level on the route. Try moving " + output + " to the top of route.");
         }
@@ -287,6 +287,9 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
         } else if (defn instanceof OnExceptionDefinition || ProcessorDefinitionHelper.isParentOfType(OnExceptionDefinition.class, defn, true)) {
             log.trace("{} is part of OnException so no error handler is applied", defn);
             // do not use error handler for onExceptions blocks as it will handle errors itself
+        } else if (defn instanceof HystrixDefinition || ProcessorDefinitionHelper.isParentOfType(HystrixDefinition.class, defn, true)) {
+            log.trace("{} is part of HystrixCircuitBreaker so no error handler is applied", defn);
+            // do not use error handler for hystrixCircuitBreaker blocks as it will handle errors itself
         } else if (defn instanceof MulticastDefinition) {
             // do not use error handler for multicast as it offers fine grained error handlers for its outputs
             // however if share unit of work is enabled, we need to wrap an error handler on the multicast parent
@@ -1470,6 +1473,19 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
     }
 
     /**
+     * Creates a Hystrix Circuit Breaker EIP.
+     * <p/>
+     * This requires having camel-hystrix on the classpath.
+     *
+     * @return  the builder
+     */
+    public HystrixDefinition hystrix() {
+        HystrixDefinition answer = new HystrixDefinition();
+        addOutput(answer);
+        return answer;
+    }
+
+    /**
      * <a href="http://camel.apache.org/load-balancer.html">Load Balancer EIP:</a>
      * Creates a loadbalance
      *
@@ -2125,7 +2141,7 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
     /**
      * <a href="http://camel.apache.org/loop.html">Loop EIP:</a>
      * Creates a loop allowing to process the a message a number of times and possibly process them
-     * in a different way. Useful mostly for testing.
+     * in a different way.
      *
      * @param expression the loop expression
      * @return the builder
@@ -2138,8 +2154,22 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
 
     /**
      * <a href="http://camel.apache.org/loop.html">Loop EIP:</a>
+     * Creates a while loop allowing to process the a message while the predicate matches
+     * and possibly process them in a different way.
+     *
+     * @param predicate the while loop predicate
+     * @return the builder
+     */
+    public LoopDefinition loopDoWhile(Predicate predicate) {
+        LoopDefinition loop = new LoopDefinition(predicate);
+        addOutput(loop);
+        return loop;
+    }
+
+    /**
+     * <a href="http://camel.apache.org/loop.html">Loop EIP:</a>
      * Creates a loop allowing to process the a message a number of times and possibly process them
-     * in a different way. Useful mostly for testing.
+     * in a different way.
      *
      * @param count  the number of times
      * @return the builder
@@ -2242,6 +2272,22 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
         RollbackDefinition answer = new RollbackDefinition(message);
         addOutput(answer);
         return (Type) this;
+    }
+
+    /**
+     * <a href="http://camel.apache.org/wiretap.html">WireTap EIP:</a>
+     * Sends messages to all its child outputs; so that each processor and
+     * destination gets a copy of the original message to avoid the processors
+     * interfering with each other using {@link ExchangePattern#InOnly}.
+     *
+     * @param endpoint  the endpoint to wiretap to
+     * @return the builder
+     */
+    public WireTapDefinition<Type> wireTap(Endpoint endpoint) {
+        WireTapDefinition answer = new WireTapDefinition();
+        answer.setUri(endpoint.getEndpointUri());
+        addOutput(answer);
+        return answer;
     }
 
     /**
@@ -3253,7 +3299,9 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @param aggregationStrategyRef Reference of aggregation strategy to aggregate input data and additional data.
      * @return the builder
      * @see org.apache.camel.processor.Enricher
+     * @deprecated use enrich with a <tt>ref:id</tt> as the resourceUri parameter.
      */
+    @Deprecated
     public Type enrichRef(String resourceRef, String aggregationStrategyRef) {
         return enrichRef(resourceRef, aggregationStrategyRef, false);
     }
@@ -3271,7 +3319,9 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      *                               an exception was thrown.
      * @return the builder
      * @see org.apache.camel.processor.Enricher
+     * @deprecated use enrich with a <tt>ref:id</tt> as the resourceUri parameter.
      */
+    @Deprecated
     public Type enrichRef(String resourceRef, String aggregationStrategyRef, boolean aggregateOnException) {
         return enrichRef(resourceRef, aggregationStrategyRef, false, false);
     }
@@ -3290,7 +3340,9 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @param shareUnitOfWork        whether to share unit of work
      * @return the builder
      * @see org.apache.camel.processor.Enricher
+     * @deprecated use enrich with a <tt>ref:id</tt> as the resourceUri parameter.
      */
+    @Deprecated
     @SuppressWarnings("unchecked")
     public Type enrichRef(String resourceRef, String aggregationStrategyRef, boolean aggregateOnException, boolean shareUnitOfWork) {
         EnrichDefinition answer = new EnrichDefinition();
@@ -3452,7 +3504,9 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      * @param aggregationStrategyRef Reference of aggregation strategy to aggregate input data and additional data.
      * @return the builder
      * @see org.apache.camel.processor.PollEnricher
+     * @deprecated use pollEnrich with a <tt>ref:id</tt> as the resourceUri parameter.
      */
+    @Deprecated
     @SuppressWarnings("unchecked")
     public Type pollEnrichRef(String resourceRef, long timeout, String aggregationStrategyRef) {
         PollEnrichDefinition pollEnrich = new PollEnrichDefinition();
@@ -3482,7 +3536,9 @@ public abstract class ProcessorDefinition<Type extends ProcessorDefinition<Type>
      *                               an exception was thrown.
      * @return the builder
      * @see org.apache.camel.processor.PollEnricher
+     * @deprecated use pollEnrich with a <tt>ref:id</tt> as the resourceUri parameter.
      */
+    @Deprecated
     @SuppressWarnings("unchecked")
     public Type pollEnrichRef(String resourceRef, long timeout, String aggregationStrategyRef, boolean aggregateOnException) {
         PollEnrichDefinition pollEnrich = new PollEnrichDefinition();

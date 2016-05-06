@@ -21,6 +21,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
+import java.io.UnsupportedEncodingException;
 import java.io.Writer;
 
 import com.thoughtworks.xstream.XStream;
@@ -45,6 +46,7 @@ import org.apache.camel.component.salesforce.api.dto.SObjectBasicInfo;
 import org.apache.camel.component.salesforce.api.dto.SObjectDescription;
 import org.apache.camel.component.salesforce.api.dto.SearchResults;
 import org.apache.camel.component.salesforce.api.dto.Versions;
+import org.apache.camel.component.salesforce.internal.client.XStreamUtils;
 import org.eclipse.jetty.util.StringUtil;
 
 import static org.apache.camel.component.salesforce.SalesforceEndpointConfig.SOBJECT_NAME;
@@ -68,6 +70,7 @@ public class XmlRestProcessor extends AbstractRestProcessor {
                     }
 
                 });
+                XStreamUtils.addDefaultPermissions(result);
                 result.registerConverter(new JodaTimeConverter());
                 return result;
             }
@@ -168,7 +171,7 @@ public class XmlRestProcessor extends AbstractRestProcessor {
                     localXStream.processAnnotations(dto.getClass());
                     ByteArrayOutputStream out = new ByteArrayOutputStream();
                     // make sure we write the XML with the right encoding
-                    localXStream.toXML(dto, new OutputStreamWriter(out, StringUtil.__UTF8_CHARSET));
+                    localXStream.toXML(dto, new OutputStreamWriter(out, StringUtil.__UTF8));
                     request = new ByteArrayInputStream(out.toByteArray());
                 } else {
                     // if all else fails, get body as String
@@ -178,12 +181,15 @@ public class XmlRestProcessor extends AbstractRestProcessor {
                             + (in.getBody() == null ? null : in.getBody().getClass());
                         throw new SalesforceException(msg, null);
                     } else {
-                        request = new ByteArrayInputStream(body.getBytes(StringUtil.__UTF8_CHARSET));
+                        request = new ByteArrayInputStream(body.getBytes(StringUtil.__UTF8));
                     }
                 }
             }
             return request;
         } catch (XStreamException e) {
+            String msg = "Error marshaling request: " + e.getMessage();
+            throw new SalesforceException(msg, e);
+        } catch (UnsupportedEncodingException e) {
             String msg = "Error marshaling request: " + e.getMessage();
             throw new SalesforceException(msg, e);
         }

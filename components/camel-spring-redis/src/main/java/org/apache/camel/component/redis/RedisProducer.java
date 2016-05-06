@@ -23,20 +23,20 @@ import org.apache.camel.util.URISupport;
 /**
  * The Redis producer.
  */
-public class RedisProducer extends DefaultProducer {
+public class  RedisProducer extends DefaultProducer {
     private final RedisClient redisClient;
+    private final CommandDispatcher commandDispatcher;
 
+    private transient String redisProducerToString;
+    
     public RedisProducer(RedisEndpoint endpoint, RedisConfiguration configuration) {
         super(endpoint);
-        redisClient = new RedisClient(configuration.getRedisTemplate());
+        this.redisClient = new RedisClient(configuration.getRedisTemplate());
+        this.commandDispatcher = new CommandDispatcher(configuration);
     }
 
     public void process(final Exchange exchange) throws Exception {
-        new CommandDispatcher(getConfiguration(), exchange).execute(redisClient);
-    }
-
-    protected RedisConfiguration getConfiguration() {
-        return getEndpoint().getConfiguration();
+        commandDispatcher.execute(redisClient, exchange);
     }
 
     @Override
@@ -46,6 +46,9 @@ public class RedisProducer extends DefaultProducer {
 
     @Override
     public String toString() {
-        return "RedisProducer[" + URISupport.sanitizeUri(getEndpoint().getEndpointUri()) + "]";
+        if (redisProducerToString == null) {
+            redisProducerToString = "RedisProducer[" + URISupport.sanitizeUri(getEndpoint().getEndpointUri()) + "]";
+        }
+        return redisProducerToString;
     }
 }

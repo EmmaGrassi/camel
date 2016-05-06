@@ -172,7 +172,17 @@ public class JmsComponent extends UriEndpointComponent implements ApplicationCon
      * may be moved at a dead letter queue on the JMS broker. To avoid this its recommended to enable this option.
      */
     public void setAcceptMessagesWhileStopping(boolean acceptMessagesWhileStopping) {
-        getConfiguration().setAcceptMessagesWhileStopping(acceptMessagesWhileStopping);
+        getConfiguration().setAcceptMessagesWhileStopping(acceptMessagesWhileStopping);   
+    }
+    
+    /**
+     * Whether the DefaultMessageListenerContainer used in the reply managers for request-reply messaging allow 
+     * the DefaultMessageListenerContainer.runningAllowed flag to quick stop in case JmsConfiguration#isAcceptMessagesWhileStopping
+     * is enabled, and org.apache.camel.CamelContext is currently being stopped. This quick stop ability is enabled by
+     * default in the regular JMS consumers but to enable for reply managers you must enable this flag.
+      */
+    public void setAllowReplyManagerQuickStop(boolean allowReplyManagerQuickStop) {
+        getConfiguration().setAllowReplyManagerQuickStop(allowReplyManagerQuickStop);
     }
 
     /**
@@ -607,6 +617,18 @@ public class JmsComponent extends UriEndpointComponent implements ApplicationCon
     }
 
     /**
+     * If enabled and you are using Request Reply messaging (InOut) and an Exchange failed with a SOAP fault (not exception) on the consumer side,
+     * then the fault flag on {@link org.apache.camel.Message#isFault()} will be send back in the response as a JMS header with the key
+     * {@link JmsConstants#JMS_TRANSFER_FAULT}.
+     * If the client is Camel, the returned fault flag will be set on the {@link org.apache.camel.Message#setFault(boolean)}.
+     * <p/>
+     * You may want to enable this when using Camel components that support faults such as SOAP based such as cxf or spring-ws.
+     */
+    public void setTransferFault(boolean transferFault) {
+        getConfiguration().setTransferFault(transferFault);
+    }
+
+    /**
      * Allows you to use your own implementation of the org.springframework.jms.core.JmsOperations interface.
      * Camel uses JmsTemplate as default. Can be used for testing purpose, but not used much as stated in the spring API docs.
      */
@@ -771,6 +793,29 @@ public class JmsComponent extends UriEndpointComponent implements ApplicationCon
         this.messageCreatedStrategy = messageCreatedStrategy;
     }
 
+    public int getWaitForProvisionCorrelationToBeUpdatedCounter() {
+        return getConfiguration().getWaitForProvisionCorrelationToBeUpdatedCounter();
+    }
+
+    /**
+     * Number of times to wait for provisional correlation id to be updated to the actual correlation id when doing request/reply over JMS
+     * and when the option useMessageIDAsCorrelationID is enabled.
+     */
+    public void setWaitForProvisionCorrelationToBeUpdatedCounter(int counter) {
+        getConfiguration().setWaitForProvisionCorrelationToBeUpdatedCounter(counter);
+    }
+
+    public long getWaitForProvisionCorrelationToBeUpdatedThreadSleepingTime() {
+        return getConfiguration().getWaitForProvisionCorrelationToBeUpdatedThreadSleepingTime();
+    }
+
+    /**
+     * Interval in millis to sleep each time while waiting for provisional correlation id to be updated.
+     */
+    public void setWaitForProvisionCorrelationToBeUpdatedThreadSleepingTime(long sleepingTime) {
+        getConfiguration().setWaitForProvisionCorrelationToBeUpdatedThreadSleepingTime(sleepingTime);
+    }
+
     // Implementation methods
     // -------------------------------------------------------------------------
 
@@ -879,6 +924,10 @@ public class JmsComponent extends UriEndpointComponent implements ApplicationCon
 
         MessageListenerContainerFactory messageListenerContainerFactory = resolveAndRemoveReferenceParameter(parameters,
                 "messageListenerContainerFactoryRef", MessageListenerContainerFactory.class);
+        if (messageListenerContainerFactory == null) {
+            messageListenerContainerFactory = resolveAndRemoveReferenceParameter(parameters,
+                    "messageListenerContainerFactory", MessageListenerContainerFactory.class);
+        }
         if (messageListenerContainerFactory != null) {
             endpoint.setMessageListenerContainerFactory(messageListenerContainerFactory);
         }

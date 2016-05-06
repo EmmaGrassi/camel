@@ -56,7 +56,15 @@ public class NettyConfiguration extends NettyServerBootstrapConfiguration implem
     private int decoderMaxLineLength = 1024;
     @UriParam
     private String encoding;
+    @UriParam(description = "To use a single encoder. This options is deprecated use encoders instead.")
+    @Deprecated
+    private ChannelHandler encoder;
+    @UriParam(javaType = "java.lang.String")
     private List<ChannelHandler> encoders = new ArrayList<ChannelHandler>();
+    @UriParam(description = "To use a single decoder. This options is deprecated use encoders instead.")
+    @Deprecated
+    private ChannelHandler decoder;
+    @UriParam(javaType = "java.lang.String")
     private List<ChannelHandler> decoders = new ArrayList<ChannelHandler>();
     @UriParam
     private boolean disconnect;
@@ -165,7 +173,9 @@ public class NettyConfiguration extends NettyServerBootstrapConfiguration implem
         }
 
         setHost(uri.getHost());
-        setPort(uri.getPort());
+        if (uri.getPort() != -1) {
+            setPort(uri.getPort());
+        }
 
         ssl = component.getAndRemoveOrResolveReferenceParameter(parameters, "ssl", boolean.class, false);
         sslHandler = component.getAndRemoveOrResolveReferenceParameter(parameters, "sslHandler", SslHandler.class, sslHandler);

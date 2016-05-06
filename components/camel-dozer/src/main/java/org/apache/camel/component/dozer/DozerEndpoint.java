@@ -17,8 +17,11 @@
 package org.apache.camel.component.dozer;
 
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
+import com.sun.el.ExpressionFactoryImpl;
 
 import org.apache.camel.Component;
 import org.apache.camel.Consumer;
@@ -32,9 +35,16 @@ import org.apache.camel.util.IOHelper;
 import org.apache.camel.util.ResourceHelper;
 import org.dozer.CustomConverter;
 import org.dozer.DozerBeanMapper;
+import org.dozer.config.BeanContainer;
+import org.dozer.loader.xml.ELEngine;
+import org.dozer.loader.xml.ElementReader;
+import org.dozer.loader.xml.ExpressionElementReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * The dozer component provides the ability to map between Java beans using the Dozer mapping library.
+ */
 @UriEndpoint(scheme = "dozer", title = "Dozer", syntax = "dozer:name", producerOnly = true, label = "transformation")
 public class DozerEndpoint extends DefaultEndpoint {
     private static final Logger LOG = LoggerFactory.getLogger(DozerEndpoint.class);
@@ -86,15 +96,15 @@ public class DozerEndpoint extends DefaultEndpoint {
     public void setConfiguration(DozerConfiguration configuration) {
         this.configuration = configuration;
     }
-    
+
     CustomMapper getCustomMapper() {
         return customMapper;
     }
-    
+
     VariableMapper getVariableMapper() {
         return variableMapper;
     }
-    
+
     ExpressionMapper getExpressionMapper() {
         return expressionMapper;
     }
@@ -103,6 +113,41 @@ public class DozerEndpoint extends DefaultEndpoint {
     protected void doStart() throws Exception {
         super.doStart();
 
+        initDozerBeanContainerAndMapper();
+    }
+
+    @Override
+    protected void doStop() throws Exception {
+        super.doStop();
+        // noop
+    }
+
+    protected void initDozerBeanContainerAndMapper() throws Exception {
+        LOG.info("Configuring DozerBeanContainer and DozerBeanMapper");
+
+        // must setup dozer to be able to load the EL factory we are using which is from glashfish
+        ClassLoader oldCl = Thread.currentThread().getContextClassLoader();
+
+        ExpressionFactoryImpl factory = new ExpressionFactoryImpl();
+        ClassLoader cl = factory.getClass().getClassLoader();
+        Thread.currentThread().setContextClassLoader(cl);
+
+        System.setProperty("javax.el.ExpressionFactory", "com.sun.el.ExpressionFactoryImpl");
+        try {
+            ELEngine engine = new ELEngine();
+            engine.init();
+            BeanContainer.getInstance().setElEngine(engine);
+            ElementReader reader = new ExpressionElementReader(engine);
+            BeanContainer.getInstance().setElementReader(reader);
+
+        } catch (Throwable e) {
+            throw new IllegalStateException("Error configuring DozerBeanContainer/DozerBeanMapper due " + e.getMessage(), e);
+        } finally {
+            System.clearProperty("javax.el.ExpressionFactory");
+            Thread.currentThread().setContextClassLoader(oldCl);
+        }
+
+        // configure mapper as well
         if (mapper == null) {
             if (configuration.getMappingConfiguration() != null) {
                 mapper = DozerTypeConverterLoader.createDozerBeanMapper(
@@ -112,26 +157,20 @@ public class DozerEndpoint extends DefaultEndpoint {
             }
             configureMapper(mapper);
         }
+
     }
 
-    @Override
-    protected void doStop() throws Exception {
-        super.doStop();
-        // noop
-    }
-    
     private DozerBeanMapper createDozerBeanMapper() throws Exception {
-        DozerBeanMapper answer = new DozerBeanMapper();
+        DozerBeanMapper answer = DozerComponent.createDozerBeanMapper(Collections.<String>emptyList());
         InputStream mapStream = null;
         try {
             LOG.info("Loading Dozer mapping file {}.", configuration.getMappingFile());
             // create the mapper instance and add the mapping file
-            mapStream = ResourceHelper.resolveMandatoryResourceAsInputStream(getCamelContext().getClassResolver(), configuration.getMappingFile());
+            mapStream = ResourceHelper.resolveMandatoryResourceAsInputStream(getCamelContext(), configuration.getMappingFile());
             answer.addMapping(mapStream);
         } finally {
             IOHelper.close(mapStream);
         }
-
         return answer;
     }
 

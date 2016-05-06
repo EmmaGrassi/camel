@@ -41,8 +41,6 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Default component to use for base for components implementations.
- *
- * @version 
  */
 public abstract class DefaultComponent extends ServiceSupport implements Component {
     private static final Logger LOG = LoggerFactory.getLogger(DefaultComponent.class);
@@ -106,7 +104,7 @@ public abstract class DefaultComponent extends ServiceSupport implements Compone
         validateURI(uri, path, parameters);
         if (LOG.isTraceEnabled()) {
             // at trace level its okay to have parameters logged, that may contain passwords
-            LOG.trace("Creating endpoint uri=[{}], path=[{}], parameters=[{}]", new Object[]{URISupport.sanitizeUri(uri), URISupport.sanitizePath(path), parameters});
+            LOG.trace("Creating endpoint uri=[{}], path=[{}], parameters=[{}]", URISupport.sanitizeUri(uri), URISupport.sanitizePath(path), parameters);
         } else if (LOG.isDebugEnabled()) {
             // but at debug level only output sanitized uris
             LOG.debug("Creating endpoint uri=[{}], path=[{}]", new Object[]{URISupport.sanitizeUri(uri), URISupport.sanitizePath(path)});
@@ -196,12 +194,6 @@ public abstract class DefaultComponent extends ServiceSupport implements Compone
      * @throws ResolveEndpointFailedException should be thrown if the URI validation failed
      */
     protected void validateURI(String uri, String path, Map<String, Object> parameters) {
-        // check for uri containing & but no ? marker
-        if (uri.contains("&") && !uri.contains("?")) {
-            throw new ResolveEndpointFailedException(uri, "Invalid uri syntax: no ? marker however the uri "
-                + "has & parameter separators. Check the uri if its missing a ? marker.");
-        }
-
         // check for uri containing double && markers without include by RAW
         if (uri.contains("&&")) {
             Pattern pattern = Pattern.compile("RAW(.*&&.*)");
@@ -376,7 +368,7 @@ public abstract class DefaultComponent extends ServiceSupport implements Compone
         if (value == null) {
             return defaultValue;
         } else {
-            return EndpointHelper.resolveReferenceParameter(getCamelContext(), value.toString(), type);
+            return EndpointHelper.resolveReferenceParameter(getCamelContext(), value, type);
         }
     }
     
@@ -397,7 +389,7 @@ public abstract class DefaultComponent extends ServiceSupport implements Compone
      * @see EndpointHelper#resolveReferenceListParameter(CamelContext, String, Class)
      */
     public <T> List<T> resolveAndRemoveReferenceListParameter(Map<String, Object> parameters, String key, Class<T> elementType) {
-        return resolveAndRemoveReferenceListParameter(parameters, key, elementType, new ArrayList<T>(0));
+        return resolveAndRemoveReferenceListParameter(parameters, key, elementType, new ArrayList<>(0));
     }
 
     /**
@@ -424,7 +416,7 @@ public abstract class DefaultComponent extends ServiceSupport implements Compone
         if (value == null) {
             return defaultValue;
         } else {
-            return EndpointHelper.resolveReferenceListParameter(getCamelContext(), value.toString(), elementType);
+            return EndpointHelper.resolveReferenceListParameter(getCamelContext(), value, elementType);
         }
     }
     

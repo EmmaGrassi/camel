@@ -65,7 +65,7 @@ public class SjmsBatchConsumerTest extends CamelTestSupport {
     private static class TransactedSendHarness extends RouteBuilder {
         private final String queueName;
 
-        public TransactedSendHarness(String queueName) {
+        TransactedSendHarness(String queueName) {
             this.queueName = queueName;
         }
 
@@ -175,6 +175,61 @@ public class SjmsBatchConsumerTest extends CamelTestSupport {
         template.sendBody("direct:in", generateStrings(messageCount));
         mockBatches.assertIsSatisfied();
         assertFirstMessageBodyOfLength(mockBatches, messageCount);
+    }
+
+    @Test
+    public void testConsumptionCompletionInterval() throws Exception {
+        final int completionInterval = 2000;
+        final int completionSize = -1; // timeout-based only
+
+        final String queueName = getQueueName();
+        context.addRoutes(new TransactedSendHarness(queueName));
+        context.addRoutes(new RouteBuilder() {
+            public void configure() throws Exception {
+                fromF("sjms-batch:%s?completionInterval=%s&completionSize=%s&aggregationStrategy=#testStrategy",
+                        queueName, completionInterval, completionSize).routeId("batchConsumer").startupOrder(10)
+                        .to("mock:batches");
+            }
+        });
+        context.start();
+
+        int messageCount = 50;
+        assertTrue(messageCount < SjmsBatchEndpoint.DEFAULT_COMPLETION_SIZE);
+
+        MockEndpoint mockBatches = getMockEndpoint("mock:batches");
+        mockBatches.expectedMinimumMessageCount(1);  // everything ought to be batched together but the interval may trigger in between and we get 2 etc
+
+        template.sendBody("direct:in", generateStrings(messageCount));
+
+        mockBatches.assertIsSatisfied();
+    }
+
+    @Test
+    public void testConsumptionSendEmptyMessageWhenIdle() throws Exception {
+        final int completionInterval = 2000;
+        final int completionSize = -1; // timeout-based only
+
+        final String queueName = getQueueName();
+        context.addRoutes(new TransactedSendHarness(queueName));
+        context.addRoutes(new RouteBuilder() {
+            public void configure() throws Exception {
+                fromF("sjms-batch:%s?completionInterval=%s&completionSize=%s&sendEmptyMessageWhenIdle=true&aggregationStrategy=#testStrategy",
+                        queueName, completionInterval, completionSize).routeId("batchConsumer").startupOrder(10)
+                        .to("mock:batches");
+            }
+        });
+        context.start();
+
+        int messageCount = 50;
+        assertTrue(messageCount < SjmsBatchEndpoint.DEFAULT_COMPLETION_SIZE);
+
+        MockEndpoint mockBatches = getMockEndpoint("mock:batches");
+        // trigger a couple of empty messages
+        mockBatches.expectedMinimumMessageCount(3);
+
+        template.sendBody("direct:in", generateStrings(messageCount));
+
+        mockBatches.assertIsSatisfied();
     }
 
     /**

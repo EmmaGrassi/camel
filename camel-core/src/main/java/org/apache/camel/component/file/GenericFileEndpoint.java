@@ -18,14 +18,11 @@ package org.apache.camel.component.file;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.apache.camel.CamelContext;
 import org.apache.camel.Component;
@@ -34,6 +31,7 @@ import org.apache.camel.Expression;
 import org.apache.camel.ExpressionIllegalSyntaxException;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.Message;
+import org.apache.camel.Predicate;
 import org.apache.camel.Processor;
 import org.apache.camel.impl.ScheduledPollEndpoint;
 import org.apache.camel.processor.idempotent.MemoryIdempotentRepository;
@@ -59,10 +57,6 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     protected static final String DEFAULT_STRATEGYFACTORY_CLASS = "org.apache.camel.component.file.strategy.GenericFileProcessStrategyFactory";
     protected static final int DEFAULT_IDEMPOTENT_CACHE_SIZE = 1000;
     
-    private static final Integer CHMOD_WRITE_MASK = 02;
-    private static final Integer CHMOD_READ_MASK = 04;
-    private static final Integer CHMOD_EXECUTE_MASK = 01;
-
     protected final Logger log = LoggerFactory.getLogger(getClass());
 
     // common options
@@ -73,7 +67,7 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     protected int bufferSize = FileUtil.BUFFER_SIZE;
     @UriParam
     protected String charset;
-    @UriParam
+    @UriParam(javaType = "java.lang.String")
     protected Expression fileName;
 
     // producer options
@@ -84,7 +78,7 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     protected GenericFileExist fileExist = GenericFileExist.Override;
     @UriParam(label = "producer")
     protected String tempPrefix;
-    @UriParam(label = "producer")
+    @UriParam(label = "producer", javaType = "java.lang.String")
     protected Expression tempFileName;
     @UriParam(label = "producer,advanced", defaultValue = "true")
     protected boolean eagerDeleteTargetFile = true;
@@ -94,8 +88,6 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     protected String doneFileName;
     @UriParam(label = "producer,advanced")
     protected boolean allowNullBody;
-    @UriParam(label = "producer,advanced")
-    protected String chmod;
 
     // consumer options
 
@@ -117,7 +109,7 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     protected boolean recursive;
     @UriParam(label = "consumer")
     protected boolean delete;
-    @UriParam(label = "consumer")
+    @UriParam(label = "consumer,filter")
     protected int maxMessagesPerPoll;
     @UriParam(label = "consumer,filter", defaultValue = "true")
     protected boolean eagerMaxMessagesPerPoll = true;
@@ -129,22 +121,28 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     protected String include;
     @UriParam(label = "consumer,filter")
     protected String exclude;
-    @UriParam(label = "consumer,filter")
+    @UriParam(label = "consumer,filter", javaType = "java.lang.String")
     protected Expression move;
-    @UriParam(label = "consumer")
+    @UriParam(label = "consumer", javaType = "java.lang.String")
     protected Expression moveFailed;
-    @UriParam(label = "consumer")
+    @UriParam(label = "consumer", javaType = "java.lang.String")
     protected Expression preMove;
-    @UriParam(label = "producer")
+    @UriParam(label = "producer", javaType = "java.lang.String")
     protected Expression moveExisting;
-    @UriParam(label = "consumer,filter")
+    @UriParam(label = "consumer,filter", defaultValue = "false")
     protected Boolean idempotent;
-    @UriParam(label = "consumer,filter")
+    @UriParam(label = "consumer,filter", javaType = "java.lang.String")
     protected Expression idempotentKey;
     @UriParam(label = "consumer,filter")
     protected IdempotentRepository<String> idempotentRepository;
     @UriParam(label = "consumer,filter")
     protected GenericFileFilter<T> filter;
+    @UriParam(label = "consumer,filter", javaType = "java.lang.String")
+    protected Predicate filterDirectory;
+    @UriParam(label = "consumer,filter", javaType = "java.lang.String")
+    protected Predicate filterFile;
+    @UriParam(label = "consumer,filter", defaultValue = "true")
+    protected boolean antFilterCaseSensitive = true;
     protected volatile AntPathMatcherGenericFileFilter<T> antFilter;
     @UriParam(label = "consumer,filter")
     protected String antInclude;
@@ -152,7 +150,7 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     protected String antExclude;
     @UriParam(label = "consumer,sort")
     protected Comparator<GenericFile<T>> sorter;
-    @UriParam(label = "consumer,sort")
+    @UriParam(label = "consumer,sort", javaType = "java.lang.String")
     protected Comparator<Exchange> sortBy;
     @UriParam(label = "consumer,sort")
     protected boolean shuffle;
@@ -309,84 +307,6 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
         }
     }
 
-    /**
-     * Chmod value must be between 000 and 777; If there is a leading digit like in 0755 we will ignore it.
-     */
-    public boolean chmodPermissionsAreValid(String chmod) {
-        if (chmod == null || chmod.length() < 3 || chmod.length() > 4) {
-            return false;
-        }
-        String permissionsString = chmod.trim().substring(chmod.length() - 3);  // if 4 digits chop off leading one
-        for (int i = 0; i < permissionsString.length(); i++) {
-            Character c = permissionsString.charAt(i);
-            if (!Character.isDigit(c) || Integer.parseInt(c.toString()) > 7) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    public Set<PosixFilePermission> getPermissions() {
-        Set<PosixFilePermission> permissions = new HashSet<PosixFilePermission>();
-        if (ObjectHelper.isEmpty(chmod)) {
-            return permissions;
-        }
-
-        String chmodString = chmod.substring(chmod.length() - 3);  // if 4 digits chop off leading one
-
-        Integer ownerValue = Integer.parseInt(chmodString.substring(0, 1));
-        Integer groupValue = Integer.parseInt(chmodString.substring(1, 2));
-        Integer othersValue = Integer.parseInt(chmodString.substring(2, 3));
-
-        if ((ownerValue & CHMOD_WRITE_MASK) > 0) {
-            permissions.add(PosixFilePermission.OWNER_WRITE);
-        }
-        if ((ownerValue & CHMOD_READ_MASK) > 0) {
-            permissions.add(PosixFilePermission.OWNER_READ);
-        }
-        if ((ownerValue & CHMOD_EXECUTE_MASK) > 0) {
-            permissions.add(PosixFilePermission.OWNER_EXECUTE);
-        }
-
-        if ((groupValue & CHMOD_WRITE_MASK) > 0) {
-            permissions.add(PosixFilePermission.GROUP_WRITE);
-        }
-        if ((groupValue & CHMOD_READ_MASK) > 0) {
-            permissions.add(PosixFilePermission.GROUP_READ);
-        }
-        if ((groupValue & CHMOD_EXECUTE_MASK) > 0) {
-            permissions.add(PosixFilePermission.GROUP_EXECUTE);
-        }
-
-        if ((othersValue & CHMOD_WRITE_MASK) > 0) {
-            permissions.add(PosixFilePermission.OTHERS_WRITE);
-        }
-        if ((othersValue & CHMOD_READ_MASK) > 0) {
-            permissions.add(PosixFilePermission.OTHERS_READ);
-        }
-        if ((othersValue & CHMOD_EXECUTE_MASK) > 0) {
-            permissions.add(PosixFilePermission.OTHERS_EXECUTE);
-        }
-
-        return permissions;
-    }
-
-    public String getChmod() {
-        return chmod;
-    }
-
-    /**
-     * Specify the file permissions which is sent by the producer, the chmod value must be between 000 and 777;
-     * If there is a leading digit like in 0755 we will ignore it.
-     */
-    public void setChmod(String chmod) throws Exception {
-        if (ObjectHelper.isNotEmpty(chmod) && chmodPermissionsAreValid(chmod)) {
-            this.chmod = chmod.trim();
-        } else {
-            throw new IllegalArgumentException("chmod option [" + chmod + "] is not valid");
-        }
-    }
-
     public boolean isNoop() {
         return noop;
     }
@@ -416,7 +336,7 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     }
 
     /**
-     * Is used to include files, if filename matches the regex pattern.
+     * Is used to include files, if filename matches the regex pattern (matching is case in-senstive).
      * <p/>
      * Notice if you use symbols such as plus sign and others you would need to configure
      * this using the RAW() syntax if configuring this as an endpoint uri.
@@ -431,7 +351,7 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     }
 
     /**
-     * Is used to exclude files, if filename matches the regex pattern.
+     * Is used to exclude files, if filename matches the regex pattern (matching is case in-senstive).
      * <p/>
      * Notice if you use symbols such as plus sign and others you would need to configure
      * this using the RAW() syntax if configuring this as an endpoint uri.
@@ -451,10 +371,6 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
      */
     public void setAntInclude(String antInclude) {
         this.antInclude = antInclude;
-        if (this.antFilter == null) {
-            this.antFilter = new AntPathMatcherGenericFileFilter<T>();
-        }
-        this.antFilter.setIncludes(antInclude);
     }
 
     public String getAntExclude() {
@@ -467,20 +383,17 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
      */
     public void setAntExclude(String antExclude) {
         this.antExclude = antExclude;
-        if (this.antFilter == null) {
-            this.antFilter = new AntPathMatcherGenericFileFilter<T>();
-        }
-        this.antFilter.setExcludes(antExclude);
+    }
+
+    public boolean isAntFilterCaseSensitive() {
+        return antFilterCaseSensitive;
     }
 
     /**
-     * Sets case sensitive flag on {@link org.apache.camel.component.file.AntPathMatcherFileFilter}
+     * Sets case sensitive flag on ant fiter
      */
     public void setAntFilterCaseSensitive(boolean antFilterCaseSensitive) {
-        if (this.antFilter == null) {
-            this.antFilter = new AntPathMatcherGenericFileFilter<T>();
-        }
-        this.antFilter.setCaseSensitive(antFilterCaseSensitive);
+        this.antFilterCaseSensitive = antFilterCaseSensitive;
     }
 
     public GenericFileFilter<T> getAntFilter() {
@@ -549,6 +462,44 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
     public void setMoveFailed(String fileLanguageExpression) {
         String expression = configureMoveOrPreMoveExpression(fileLanguageExpression);
         this.moveFailed = createFileLanguageExpression(expression);
+    }
+
+    public Predicate getFilterDirectory() {
+        return filterDirectory;
+    }
+
+    /**
+     * Filters the directory based on Simple language.
+     * For example to filter on current date, you can use a simple date pattern such as ${date:now:yyyMMdd}
+     */
+    public void setFilterDirectory(Predicate filterDirectory) {
+        this.filterDirectory = filterDirectory;
+    }
+
+    /**
+     * @see #setFilterDirectory(Predicate)
+     */
+    public void setFilterDirectory(String expression) {
+        this.filterDirectory = createFileLanguagePredicate(expression);
+    }
+
+    public Predicate getFilterFile() {
+        return filterFile;
+    }
+
+    /**
+     * Filters the file based on Simple language.
+     * For example to filter on file size, you can use ${file:size} > 5000
+     */
+    public void setFilterFile(Predicate filterFile) {
+        this.filterFile = filterFile;
+    }
+
+    /**
+     * @see #setFilterFile(Predicate)
+     */
+    public void setFilterFile(String expression) {
+        this.filterFile = createFileLanguagePredicate(expression);
     }
 
     public Expression getPreMove() {
@@ -1317,6 +1268,11 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
         return language.createExpression(expression);
     }
 
+    private Predicate createFileLanguagePredicate(String expression) {
+        Language language = getCamelContext().resolveLanguage("file");
+        return language.createPredicate(expression);
+    }
+
     /**
      * Creates the associated name of the done file based on the given file name.
      * <p/>
@@ -1415,6 +1371,22 @@ public abstract class GenericFileEndpoint<T> extends ScheduledPollEndpoint imple
         }
         if ("idempotent".equals(readLock) && idempotentRepository == null) {
             throw new IllegalArgumentException("IdempotentRepository must be configured when using readLock=idempotent");
+        }
+
+        if (antInclude != null) {
+            if (antFilter == null) {
+                antFilter = new AntPathMatcherGenericFileFilter<>();
+            }
+            antFilter.setIncludes(antInclude);
+        }
+        if (antExclude != null) {
+            if (antFilter == null) {
+                antFilter = new AntPathMatcherGenericFileFilter<>();
+            }
+            antFilter.setExcludes(antExclude);
+        }
+        if (antFilter != null) {
+            antFilter.setCaseSensitive(antFilterCaseSensitive);
         }
 
         // idempotent repository may be used by others, so add it as a service so its stopped when CamelContext stops

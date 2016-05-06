@@ -17,10 +17,12 @@
 package org.apache.camel.component.ahc;
 
 import java.net.URI;
+import java.util.Map;
 import javax.net.ssl.SSLContext;
 
 import com.ning.http.client.AsyncHttpClient;
 import com.ning.http.client.AsyncHttpClientConfig;
+import org.apache.camel.AsyncEndpoint;
 import org.apache.camel.Consumer;
 import org.apache.camel.Processor;
 import org.apache.camel.Producer;
@@ -34,28 +36,33 @@ import org.apache.camel.spi.UriPath;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.camel.util.jsse.SSLContextParameters;
 
-@UriEndpoint(scheme = "ahc", title = "AHC", syntax = "ahc:httpUri", producerOnly = true, label = "http")
-public class AhcEndpoint extends DefaultEndpoint implements HeaderFilterStrategyAware {
+/**
+ * To call external HTTP services using <a href="http://github.com/sonatype/async-http-client">Async Http Client</a>.
+ */
+@UriEndpoint(scheme = "ahc", title = "AHC", syntax = "ahc:httpUri", producerOnly = true, label = "http", lenientProperties = true)
+public class AhcEndpoint extends DefaultEndpoint implements AsyncEndpoint, HeaderFilterStrategyAware {
 
     private AsyncHttpClient client;
     @UriPath @Metadata(required = "true")
     private URI httpUri;
-    @UriParam
-    private AsyncHttpClientConfig clientConfig;
     @UriParam
     private boolean bridgeEndpoint;
     @UriParam(defaultValue = "true")
     private boolean throwExceptionOnFailure = true;
     @UriParam
     private boolean transferException;
-    @UriParam
-    private SSLContextParameters sslContextParameters;
     @UriParam(defaultValue = "" + 4 * 1024)
     private int bufferSize = 4 * 1024;
     @UriParam
     private HeaderFilterStrategy headerFilterStrategy = new HttpHeaderFilterStrategy();
     @UriParam
     private AhcBinding binding;
+    @UriParam(label = "security")
+    private SSLContextParameters sslContextParameters;
+    @UriParam(label = "advanced")
+    private AsyncHttpClientConfig clientConfig;
+    @UriParam(label = "advanced", prefix = "clientConfig.", multiValue = true)
+    private Map<String, Object> clientConfigOptions;
 
     public AhcEndpoint(String endpointUri, AhcComponent component, URI httpUri) {
         super(endpointUri, component);
@@ -179,6 +186,9 @@ public class AhcEndpoint extends DefaultEndpoint implements HeaderFilterStrategy
      * in the response as a application/x-java-serialized-object content type (for example using Jetty or Servlet Camel components).
      * On the producer side the exception will be deserialized and thrown as is, instead of the AhcOperationFailedException.
      * The caused exception is required to be serialized.
+     * <p/>
+     * This is by default turned off. If you enable this then be aware that Java will deserialize the incoming
+     * data from the request to Java and that can be a potential security risk.
      */
     public void setTransferException(boolean transferException) {
         this.transferException = transferException;
@@ -209,6 +219,17 @@ public class AhcEndpoint extends DefaultEndpoint implements HeaderFilterStrategy
         this.bufferSize = bufferSize;
     }
 
+    public Map<String, Object> getClientConfigOptions() {
+        return clientConfigOptions;
+    }
+
+    /**
+     * To configure the AsyncHttpClientConfig using the key/values from the Map.
+     */
+    public void setClientConfigOptions(Map<String, Object> clientConfigOptions) {
+        this.clientConfigOptions = clientConfigOptions;
+    }
+
     @Override
     protected void doStart() throws Exception {
         super.doStart();
@@ -220,7 +241,7 @@ public class AhcEndpoint extends DefaultEndpoint implements HeaderFilterStrategy
                 AsyncHttpClientConfig.Builder builder = AhcComponent.cloneConfig(clientConfig);
                 
                 if (sslContextParameters != null) {
-                    SSLContext ssl = sslContextParameters.createSSLContext();
+                    SSLContext ssl = sslContextParameters.createSSLContext(getCamelContext());
                     builder.setSSLContext(ssl);
                 }
                 
@@ -228,7 +249,7 @@ public class AhcEndpoint extends DefaultEndpoint implements HeaderFilterStrategy
             } else {
                 if (sslContextParameters != null) {
                     AsyncHttpClientConfig.Builder builder = new AsyncHttpClientConfig.Builder();
-                    SSLContext ssl = sslContextParameters.createSSLContext();
+                    SSLContext ssl = sslContextParameters.createSSLContext(getCamelContext());
                     builder.setSSLContext(ssl);
                     config = builder.build();
                 }
